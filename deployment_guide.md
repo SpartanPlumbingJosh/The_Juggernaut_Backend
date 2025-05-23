@@ -1,62 +1,184 @@
 # Elite Manus AI Deployment Guide
 
-This guide provides instructions for deploying the Elite Manus AI system to Digital Ocean.
-
 ## Overview
 
-The Elite Manus AI system consists of two main components:
-1. Frontend - React-based user interface
-2. Backend - Core engine with conversational AI capabilities
+This guide provides instructions for deploying the Elite Manus AI system, a powerful multimodal AI platform capable of text, image, and video generation using Ollama.
+
+## System Requirements
+
+- **Digital Ocean Droplet**: Basic Droplet with at least 4GB RAM (8GB+ recommended for video generation)
+- **Storage**: Minimum 25GB (50GB+ recommended for multiple models)
+- **Operating System**: Ubuntu 22.04 LTS
 
 ## Prerequisites
 
-- Digital Ocean account
-- GitHub repository with the Elite Manus AI codebase
-- Docker installed locally for testing
+1. **Install Docker**:
+   ```bash
+   sudo apt update
+   sudo apt install -y docker.io docker-compose
+   sudo systemctl enable docker
+   sudo systemctl start docker
+   ```
+
+2. **Install Ollama**:
+   ```bash
+   curl -fsSL https://ollama.com/install.sh | sh
+   ```
+
+3. **Start Ollama Service**:
+   ```bash
+   ollama serve
+   ```
 
 ## Deployment Steps
 
-### 1. Frontend Deployment
+### 1. Clone the Repository
 
-1. Push the code to your GitHub repository
-2. The CI/CD pipeline will automatically build the frontend
-3. Deploy to Digital Ocean App Platform:
-   - Connect your GitHub repository
-   - Select the frontend directory
-   - Choose a static site deployment
-   - Configure build command: `npm run build`
-   - Set output directory: `dist` or `build`
-   - Deploy the application
+```bash
+git clone https://github.com/SpartanPlumbingJosh/The_Juggernaut_Backend.git
+cd The_Juggernaut_Backend
+```
 
-### 2. Backend Deployment
+### 2. Set Up Environment Variables
 
-1. Push the code to your GitHub repository
-2. The CI/CD pipeline will automatically build the backend
-3. Deploy to Digital Ocean App Platform:
-   - Connect your GitHub repository
-   - Select the backend directory
-   - Choose a service deployment
-   - Configure build command if needed
-   - Set environment variables for API keys and configuration
-   - Deploy the application
+Create a `.env` file in the root directory:
 
-### 3. Connecting Frontend to Backend
+```bash
+FLASK_ENV=production
+PORT=5000
+DEBUG=False
+OLLAMA_API_URL=http://localhost:11434
+```
 
-1. Set the backend API URL in the frontend environment variables
-2. Redeploy the frontend if necessary
+### 3. Install Python Dependencies
 
-## Maintenance
+```bash
+pip install -r requirements.txt
+```
 
-- Monitor the application through Digital Ocean dashboard
-- Update the codebase through GitHub and let CI/CD handle deployment
-- Backup data regularly
+### 4. Pull Required Models
+
+```bash
+# Text models
+ollama pull mistral:7b-instruct-v0.3
+ollama pull mixtral:8x7b-instruct-v0.1
+ollama pull codellama:7b-instruct
+
+# Image models
+ollama pull stable-diffusion-xl
+ollama pull playground-v2
+
+# Video models
+ollama pull stable-video-diffusion
+ollama pull animatediff
+```
+
+### 5. Start the Backend Service
+
+```bash
+gunicorn app:app --bind 0.0.0.0:5000 --workers 4
+```
+
+### 6. Configure Frontend
+
+Update the frontend environment variables to point to your backend:
+
+```
+REACT_APP_API_URL=https://your-backend-url.ondigitalocean.app
+```
+
+## API Endpoints
+
+### Text Generation
+- **Endpoint**: `/api/chat`
+- **Method**: POST
+- **Payload**:
+  ```json
+  {
+    "message": "Your text prompt here",
+    "session_id": "optional-session-id"
+  }
+  ```
+
+### Image Generation
+- **Endpoint**: `/api/generate/image`
+- **Method**: POST
+- **Payload**:
+  ```json
+  {
+    "prompt": "Your image description here",
+    "model": "optional-model-name"
+  }
+  ```
+
+### Video Generation
+- **Endpoint**: `/api/generate/video`
+- **Method**: POST
+- **Payload**:
+  ```json
+  {
+    "prompt": "Your video description here",
+    "model": "optional-model-name"
+  }
+  ```
+
+### List Available Models
+- **Endpoint**: `/api/models`
+- **Method**: GET
+
+### List Plugins
+- **Endpoint**: `/api/plugins`
+- **Method**: GET
 
 ## Troubleshooting
 
-- Check application logs in Digital Ocean dashboard
-- Verify environment variables are correctly set
-- Ensure API endpoints are properly configured
+### Common Issues
+
+1. **Ollama Not Running**:
+   - Check if Ollama is running: `ps aux | grep ollama`
+   - Restart Ollama: `ollama serve`
+
+2. **Model Download Failures**:
+   - Check disk space: `df -h`
+   - Check Ollama logs: `journalctl -u ollama`
+
+3. **Memory Issues**:
+   - Reduce the number of models loaded simultaneously
+   - Upgrade to a larger Droplet size
+
+## Resource Management
+
+The system is designed to use multiple models for different tasks. To optimize resource usage:
+
+1. **For Low-Resource Environments (4GB RAM)**:
+   - Use only Mistral 7B for text generation
+   - Disable video generation
+
+2. **For Medium-Resource Environments (8GB RAM)**:
+   - Use Mistral 7B for text and Stable Diffusion for images
+   - Limit video generation to short clips
+
+3. **For High-Resource Environments (16GB+ RAM)**:
+   - Enable all models and features
+
+## Monitoring
+
+Monitor system resource usage:
+```bash
+htop
+nvidia-smi  # If using GPU
+```
+
+## Updating
+
+To update the system:
+```bash
+cd The_Juggernaut_Backend
+git pull
+pip install -r requirements.txt
+sudo systemctl restart your-service-name
+```
 
 ## Support
 
-For additional support, refer to the documentation in the `docs` directory or contact the development team.
+For issues or questions, please open an issue on the GitHub repository.

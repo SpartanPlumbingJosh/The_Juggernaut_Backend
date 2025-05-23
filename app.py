@@ -1,7 +1,16 @@
-from flask import Flask, request, jsonify
+"""
+Updated Flask Application with Multimodal Support
+
+This module provides the main Flask application with endpoints for text, image, and video generation.
+"""
+
+from flask import Flask, request, jsonify, send_file
 import os
 import sys
 import logging
+import tempfile
+import base64
+from io import BytesIO
 from dotenv import load_dotenv
 
 # Add the core engine and integration modules to the path
@@ -51,6 +60,60 @@ def chat():
         return jsonify(response)
     except Exception as e:
         logger.error(f"Error processing chat request: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/api/generate/image', methods=['POST'])
+def generate_image():
+    """Image generation endpoint"""
+    try:
+        data = request.json
+        prompt = data.get('prompt', '')
+        model = data.get('model', None)
+        
+        if not prompt:
+            return jsonify({"error": "No prompt provided"}), 400
+            
+        response = api_gateway.generate_image(prompt, model)
+        
+        # Check if the response contains an error
+        if "error" in response:
+            return jsonify(response), 500
+            
+        return jsonify(response)
+    except Exception as e:
+        logger.error(f"Error generating image: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/api/generate/video', methods=['POST'])
+def generate_video():
+    """Video generation endpoint"""
+    try:
+        data = request.json
+        prompt = data.get('prompt', '')
+        model = data.get('model', None)
+        
+        if not prompt:
+            return jsonify({"error": "No prompt provided"}), 400
+            
+        response = api_gateway.generate_video(prompt, model)
+        
+        # Check if the response contains an error
+        if "error" in response:
+            return jsonify(response), 500
+            
+        return jsonify(response)
+    except Exception as e:
+        logger.error(f"Error generating video: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/api/models', methods=['GET'])
+def list_models():
+    """List available models endpoint"""
+    try:
+        response = api_gateway.list_models()
+        return jsonify(response)
+    except Exception as e:
+        logger.error(f"Error listing models: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/api/plugins', methods=['GET'])
