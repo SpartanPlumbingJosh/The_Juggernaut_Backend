@@ -180,6 +180,51 @@ class OllamaModelManager:
             logger.error(f"Exception in generate_text: {str(e)}")
             return {"error": str(e)}
     
+    def chat_with_history(self, messages: List[Dict[str, str]], model: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        """
+        Chat with the model using conversation history.
+        
+        Args:
+            messages: List of message dictionaries (role, content)
+            model: Specific model to use (if None, will use primary)
+            **kwargs: Additional parameters
+            
+        Returns:
+            Dict: Response from the model
+        """
+        try:
+            # Select model if not specified
+            if model is None:
+                model = self.text_models["primary"]
+            
+            # Make API request using the chat endpoint
+            params = {
+                "model": model,
+                "messages": messages,
+                "stream": False
+            }
+            
+            # Add additional parameters
+            params.update(kwargs)
+            
+            # Make API request
+            response = requests.post(f"{self.api_url}/chat", json=params)
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"Error in chat: {response.text}")
+                
+                # Try fallback model if different from the current one
+                if model != self.text_models["fallback"]:
+                    logger.info(f"Trying fallback model: {self.text_models['fallback']}")
+                    return self.chat_with_history(messages, self.text_models["fallback"], **kwargs)
+                
+                return {"error": f"Failed in chat: {response.text}"}
+        except Exception as e:
+            logger.error(f"Exception in chat: {str(e)}")
+            return {"error": str(e)}
+    
     def generate_image(self, prompt: str, model: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         """
         Generate an image using the selected Ollama model.

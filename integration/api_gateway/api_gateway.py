@@ -5,6 +5,7 @@ This module provides a Flask-compatible API Gateway class for the Elite Manus AI
 """
 
 import logging
+import uuid
 from typing import Dict, Any, List, Optional
 
 # Configure logging
@@ -42,8 +43,12 @@ class APIGateway:
         try:
             from core_engine.src.main import process_text_request
             
+            # Generate a session ID if not provided
+            if not session_id:
+                session_id = str(uuid.uuid4())
+                
             logger.info(f"Processing message for session {session_id}")
-            response = process_text_request(self.engine, message)
+            response = process_text_request(self.engine, message, session_id)
             
             # Format the response
             return {
@@ -138,6 +143,42 @@ class APIGateway:
             logger.error(f"Error listing models: {str(e)}")
             return {
                 "error": str(e),
+                "status": "error"
+            }
+    
+    def clear_conversation(self, session_id: str) -> Dict[str, Any]:
+        """
+        Clear the conversation history for a specific session.
+        
+        Args:
+            session_id: Session identifier
+            
+        Returns:
+            Dict: Status response
+        """
+        try:
+            from core_engine.src.main import clear_conversation_history
+            
+            logger.info(f"Clearing conversation history for session {session_id}")
+            success = clear_conversation_history(session_id)
+            
+            if success:
+                return {
+                    "message": "Conversation history cleared successfully",
+                    "session_id": session_id,
+                    "status": "success"
+                }
+            else:
+                return {
+                    "message": "Session not found",
+                    "session_id": session_id,
+                    "status": "warning"
+                }
+        except Exception as e:
+            logger.error(f"Error clearing conversation history: {str(e)}")
+            return {
+                "error": str(e),
+                "session_id": session_id,
                 "status": "error"
             }
     
