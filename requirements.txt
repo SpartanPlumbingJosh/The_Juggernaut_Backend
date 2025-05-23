@@ -19,3 +19,4 @@ isort==5.12.0
 flake8==6.0.0
 werkzeug==2.0.3  # Pinned to 2.0.3 for url_quote compatibility
 Pillow==9.4.0  # For image processing
+fastapi==0.95.0  # Added for API Gateway integration
