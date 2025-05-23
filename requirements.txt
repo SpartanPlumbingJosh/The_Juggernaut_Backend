@@ -17,5 +17,5 @@ pytest-cov==4.0.0
 black==23.1.0
 isort==5.12.0
 flake8==6.0.0
-werkzeug==2.0.3
+werkzeug>=2.2.2  # Updated to be compatible with Flask 2.2.3
 Pillow==9.4.0  # For image processing
