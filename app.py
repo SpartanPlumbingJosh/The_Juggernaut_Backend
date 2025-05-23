@@ -1,5 +1,5 @@
 """
-Updated Flask Application with Multimodal Support
+Updated Flask Application with Multimodal Support and CORS
 
 This module provides the main Flask application with endpoints for text, image, and video generation.
 """
@@ -12,6 +12,7 @@ import tempfile
 import base64
 from io import BytesIO
 from dotenv import load_dotenv
+from flask_cors import CORS  # Import CORS
 
 # Add the core engine and integration modules to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'core-engine/src'))
@@ -33,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# Enable CORS for all routes
+CORS(app)
 
 # Initialize core engine
 engine = initialize_engine()
@@ -114,6 +118,22 @@ def list_models():
         return jsonify(response)
     except Exception as e:
         logger.error(f"Error listing models: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/api/clear-conversation', methods=['POST'])
+def clear_conversation():
+    """Clear conversation history endpoint"""
+    try:
+        data = request.json
+        session_id = data.get('session_id', '')
+        
+        if not session_id:
+            return jsonify({"error": "No session_id provided"}), 400
+            
+        response = api_gateway.clear_conversation(session_id)
+        return jsonify(response)
+    except Exception as e:
+        logger.error(f"Error clearing conversation: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/api/plugins', methods=['GET'])
