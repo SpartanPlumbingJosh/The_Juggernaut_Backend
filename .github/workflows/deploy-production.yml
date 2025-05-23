@@ -1,0 +1,242 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_by:
+        description: 'Name of the person who approved this deployment'
+        required: true
+      approval_reason:
+        description: 'Reason for approval'
+        required: true
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+jobs:
+  approval:
+    name: Production Deployment Approval
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    
+    steps:
+    - name: Request approval
+      uses: trstringer/manual-approval@v1
+      with:
+        secret: ${{ secrets.GITHUB_TOKEN }}
+        approvers: ${{ vars.PRODUCTION_APPROVERS }}
+        minimum-approvals: 2
+        issue-title: 'Production Deployment Approval Required'
+        issue-body: |
+          A new deployment to production has been triggered.
+          
+          Please review the changes and approve or reject this deployment.
+          
+          Commit: ${{ github.sha }}
+          Author: ${{ github.actor }}
+          Message: ${{ github.event.head_commit.message }}
+          
+          [View Changes](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+        
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [approval]
+    if: ${{ github.event_name == 'workflow_dispatch' || success() }}
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up DigitalOcean CLI
+      uses: digitalocean/action-doctl@v2
+      with:
+        token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: '1.4.6'
+        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+        
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: build-artifacts
+        path: artifacts
+        
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+        
+    - name: Terraform Init
+      run: terraform init
+      working-directory: ./infrastructure/deployment/terraform/environments/production
+      
+    - name: Terraform Plan
+      run: terraform plan -out=tfplan
+      working-directory: ./infrastructure/deployment/terraform/environments/production
+      env:
+        TF_VAR_environment: "production"
+        
+    - name: Terraform Apply
+      run: terraform apply -auto-approve tfplan
+      working-directory: ./infrastructure/deployment/terraform/environments/production
+      
+    # Deploy to NYC region first (primary)
+    - name: Deploy API Service to NYC
+      run: |
+        doctl apps update ${{ secrets.PRODUCTION_NYC_APP_ID }} --spec ./infrastructure/deployment/app_specs/production-nyc-api.yaml
+        
+    - name: Deploy WebSocket Service to NYC
+      run: |
+        doctl apps update ${{ secrets.PRODUCTION_NYC_WEBSOCKET_APP_ID }} --spec ./infrastructure/deployment/app_specs/production-nyc-websocket.yaml
+        
+    - name: Deploy AI Service to NYC
+      run: |
+        doctl apps update ${{ secrets.PRODUCTION_NYC_AI_APP_ID }} --spec ./infrastructure/deployment/app_specs/production-nyc-ai.yaml
+        
+    - name: Deploy Frontend to NYC
+      run: |
+        doctl apps update ${{ secrets.PRODUCTION_NYC_FRONTEND_APP_ID }} --spec ./infrastructure/deployment/app_specs/production-nyc-frontend.yaml
+        
+    - name: Wait for NYC deployment to complete
+      run: |
+        # Wait for API service
+        doctl apps get-deployment ${{ secrets.PRODUCTION_NYC_APP_ID }} --wait
+        
+        # Wait for WebSocket service
+        doctl apps get-deployment ${{ secrets.PRODUCTION_NYC_WEBSOCKET_APP_ID }} --wait
+        
+        # Wait for AI service
+        doctl apps get-deployment ${{ secrets.PRODUCTION_NYC_AI_APP_ID }} --wait
+        
+        # Wait for Frontend
+        doctl apps get-deployment ${{ secrets.PRODUCTION_NYC_FRONTEND_APP_ID }} --wait
+        
+    - name: Run health checks for NYC
+      run: |
+        # Run health checks against NYC production environment
+        python ./infrastructure/auto_healing/health_check_client.py --url https://api-nyc.elite-ai-assistant.com/health
+        
+    # If NYC deployment is successful, deploy to AMS region (secondary)
+    - name: Deploy API Service to AMS
+      run: |
+        doctl apps update ${{ secrets.PRODUCTION_AMS_APP_ID }} --spec ./infrastructure/deployment/app_specs/production-ams-api.yaml
+        
+    - name: Deploy WebSocket Service to AMS
+      run: |
+        doctl apps update ${{ secrets.PRODUCTION_AMS_WEBSOCKET_APP_ID }} --spec ./infrastructure/deployment/app_specs/production-ams-websocket.yaml
+        
+    - name: Deploy AI Service to AMS
+      run: |
+        doctl apps update ${{ secrets.PRODUCTION_AMS_AI_APP_ID }} --spec ./infrastructure/deployment/app_specs/production-ams-ai.yaml
+        
+    - name: Deploy Frontend to AMS
+      run: |
+        doctl apps update ${{ secrets.PRODUCTION_AMS_FRONTEND_APP_ID }} --spec ./infrastructure/deployment/app_specs/production-ams-frontend.yaml
+        
+    - name: Wait for AMS deployment to complete
+      run: |
+        # Wait for API service
+        doctl apps get-deployment ${{ secrets.PRODUCTION_AMS_APP_ID }} --wait
+        
+        # Wait for WebSocket service
+        doctl apps get-deployment ${{ secrets.PRODUCTION_AMS_WEBSOCKET_APP_ID }} --wait
+        
+        # Wait for AI service
+        doctl apps get-deployment ${{ secrets.PRODUCTION_AMS_AI_APP_ID }} --wait
+        
+        # Wait for Frontend
+        doctl apps get-deployment ${{ secrets.PRODUCTION_AMS_FRONTEND_APP_ID }} --wait
+        
+    - name: Run health checks for AMS
+      run: |
+        # Run health checks against AMS production environment
+        python ./infrastructure/auto_healing/health_check_client.py --url https://api-ams.elite-ai-assistant.com/health
+        
+    - name: Run smoke tests
+      run: |
+        # Run smoke tests against production environment
+        cd tests/smoke
+        npm install
+        npm test -- --env=production
+        
+    - name: Create deployment record
+      run: |
+        # Record deployment details
+        DEPLOYMENT_ID=$(date +%Y%m%d%H%M%S)
+        DEPLOYMENT_INFO=$(cat <<EOF
+        {
+          "id": "${DEPLOYMENT_ID}",
+          "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+          "commit": "${{ github.sha }}",
+          "version": "$(cat VERSION || echo 'unknown')",
+          "approved_by": "${{ github.event.inputs.approved_by || 'CI/CD System' }}",
+          "approval_reason": "${{ github.event.inputs.approval_reason || 'Automated deployment' }}"
+        }
+        EOF
+        )
+        echo "$DEPLOYMENT_INFO" > deployment_${DEPLOYMENT_ID}.json
+        aws s3 cp deployment_${DEPLOYMENT_ID}.json s3://elite-ai-deployments/production/
+        
+    - name: Notify on success
+      if: success()
+      uses: slackapi/slack-github-action@v1.23.0
+      with:
+        channel-id: 'production-deployments'
+        slack-message: ':rocket: Production deployment successful! ${{ github.repository }} has been deployed to production environment.'
+      env:
+        SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        
+    - name: Notify on failure
+      if: failure()
+      uses: slackapi/slack-github-action@v1.23.0
+      with:
+        channel-id: 'production-deployments'
+        slack-message: ':x: Production deployment failed for ${{ github.repository }}. Check the workflow logs for details.'
+      env:
+        SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        
+  rollback:
+    name: Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: failure()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up DigitalOcean CLI
+      uses: digitalocean/action-doctl@v2
+      with:
+        token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        
+    - name: Trigger rollback
+      run: |
+        # Execute rollback script
+        export APP_ID=${{ secrets.PRODUCTION_NYC_APP_ID }}
+        export ENVIRONMENT="production"
+        export SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL }}
+        export DIGITALOCEAN_TOKEN=${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        
+        bash ./infrastructure/auto_healing/deployment_rollback.sh
+        
+        # Also rollback AMS region
+        export APP_ID=${{ secrets.PRODUCTION_AMS_APP_ID }}
+        bash ./infrastructure/auto_healing/deployment_rollback.sh
+        
+    - name: Notify about rollback
+      uses: slackapi/slack-github-action@v1.23.0
+      with:
+        channel-id: 'production-deployments'
+        slack-message: ':warning: Automatic rollback triggered for ${{ github.repository }} due to deployment failure.'
+      env:
+        SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

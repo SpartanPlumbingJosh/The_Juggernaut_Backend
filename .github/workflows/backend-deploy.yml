@@ -1,0 +1,45 @@
+name: Backend CI/CD Pipeline
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'core-engine/**'
+      - 'integration/**'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        cd core-engine/src
+        pip install -r requirements.txt
+        
+    - name: Run tests
+      run: |
+        cd core-engine
+        pytest src/ --cov=src
+        
+    - name: Deploy to Digital Ocean
+      uses: digitalocean/app_action@v1.1.5
+      with:
+        app_name: elite-manus-backend
+        token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        images: |
+          [
+            {
+              "name": "backend",
+              "registry_type": "GITHUB",
+              "repository": "${{ github.repository }}",
+              "tag": "${{ github.sha }}"
+            }
+          ]

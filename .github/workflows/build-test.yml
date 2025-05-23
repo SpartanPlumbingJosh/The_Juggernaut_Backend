@@ -1,0 +1,91 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: '1.19'
+        
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+        
+    - name: Install dependencies
+      run: |
+        # Go dependencies
+        go mod download
+        
+        # Node.js dependencies
+        npm ci
+        
+        # Python dependencies
+        pip install -r requirements.txt
+        
+    - name: Run linters
+      run: |
+        # Go linting
+        go install golang.org/x/lint/golint@latest
+        golint -set_exit_status ./...
+        
+        # JavaScript/TypeScript linting
+        npm run lint
+        
+        # Python linting
+        pip install flake8
+        flake8 .
+        
+    - name: Run unit tests
+      run: |
+        # Go tests
+        go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+        
+        # JavaScript/TypeScript tests
+        npm test
+        
+        # Python tests
+        pytest
+        
+    - name: Upload test coverage
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./coverage.txt,./coverage/lcov.info
+        fail_ci_if_error: true
+        
+    - name: Build application
+      run: |
+        # Go build
+        go build -v ./...
+        
+        # JavaScript/TypeScript build
+        npm run build
+        
+    - name: Archive build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: |
+          dist/
+          build/
+          bin/
